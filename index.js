@@ -8,8 +8,7 @@ import { io } from 'socket.io-client';
 import readline from 'readline';
 
 const config = {
-  masterclawUrl: process.env.MASTERCLAW_URL || 'wss://web-production-e0d96.up.railway.app',
-  fallbackUrl: process.env.MASTERCLAW_FALLBACK_URL || 'ws://147.224.9.9:3001',
+  masterclawUrl: process.env.MASTERCLAW_URL || 'http://localhost:3001',
   agentName: process.env.AGENT_NAME || 'OpenClaw Agent',
   agentId: process.env.AGENT_ID || `oc-${Date.now()}`,
   autoReconnect: true,
@@ -32,20 +31,13 @@ class MasterClawChatSkill {
     console.log(`Target: ${config.masterclawUrl}`);
     console.log('');
 
-    // Try primary URL first, then fallback
     await this.connect(config.masterclawUrl);
-    
-    if (!this.isConnected && config.fallbackUrl) {
-      console.log('⚠️  Primary failed, trying fallback...');
-      await this.connect(config.fallbackUrl);
-    }
 
     if (!this.isConnected) {
       console.error('❌ Could not connect to MasterClawInterface');
       process.exit(1);
     }
 
-    // Start CLI for local interaction
     this.startCLI();
   }
 
@@ -53,7 +45,6 @@ class MasterClawChatSkill {
     return new Promise((resolve) => {
       console.log(`🔗 Connecting to ${url}...`);
 
-      // Normalize URL for Socket.IO
       let socketUrl = url;
       if (url.startsWith('ws://')) {
         socketUrl = url.replace('ws://', 'http://');
@@ -69,17 +60,16 @@ class MasterClawChatSkill {
         reconnectionDelay: config.reconnectInterval,
         withCredentials: true,
         auth: {
-          sessionId: config.agentId,
+          agentId: config.agentId,
           agentName: config.agentName
         }
       });
 
       this.socket.on('connect', () => {
         console.log('✅ Connected to MasterClawInterface');
+        console.log(`Socket ID: ${this.socket.id}`);
         this.isConnected = true;
         this.reconnectAttempts = 0;
-        
-        // Register as a chat skill provider
         this.registerSkill();
         resolve(true);
       });
@@ -87,7 +77,6 @@ class MasterClawChatSkill {
       this.socket.on('connect_error', (err) => {
         console.log(`❌ Connection error: ${err.message}`);
         this.reconnectAttempts++;
-        
         if (this.reconnectAttempts >= 3) {
           resolve(false);
         }
@@ -98,17 +87,14 @@ class MasterClawChatSkill {
         this.isConnected = false;
       });
 
-      // Handle incoming chat messages from dashboard
       this.socket.on('chat:message', (data) => {
         this.handleChatMessage(data);
       });
 
-      // Handle skill invocation
       this.socket.on('skill:invoke', (data) => {
         this.handleSkillInvoke(data);
       });
 
-      // Timeout fallback
       setTimeout(() => {
         if (!this.isConnected) {
           resolve(false);
@@ -119,22 +105,25 @@ class MasterClawChatSkill {
 
   registerSkill() {
     const skill = {
-      trigger: 'chat',
       name: config.agentName,
-      id: config.agentId,
-      description: 'OpenClaw agent for MasterClawInterface',
-      status: 'active',
-      capabilities: ['chat', 'text-generation', 'task-assistance'],
+      description: 'OpenClaw AI agent for chat conversations',
+      trigger: 'chat',
+      parameters: [
+        { name: 'message', type: 'string', required: true, description: 'User message' }
+      ],
       socketId: this.socket.id
     };
 
+    console.log('📡 Registering skill:', skill.name);
+    
     this.socket.emit('skill:register', skill, (response) => {
-      if (response?.success) {
-        console.log('✅ Skill registered successfully');
+      if (response?.ok) {
+        console.log('✅ Skill registered successfully!');
         console.log('💬 Ready to receive messages from dashboard');
         console.log('');
       } else {
-        console.error('❌ Skill registration failed:', response?.error);
+        console.error('❌ Skill registration failed:', response?.error || 'Unknown error');
+        setTimeout(() => this.registerSkill(), 5000);
       }
     });
   }
@@ -144,17 +133,13 @@ class MasterClawChatSkill {
     
     console.log(`\n📨 [${new Date(timestamp).toLocaleTimeString()}] User: ${message}`);
     
-    // Store in conversation history
     this.currentConversation.push({
       role: 'user',
       content: message,
       timestamp
     });
 
-    // Here you would integrate with your actual OpenClaw agent logic
-    // For now, echo back a response
     const response = this.generateResponse(message);
-    
     this.sendResponse(response, conversationId);
   }
 
@@ -162,7 +147,6 @@ class MasterClawChatSkill {
     const { skill, action, params, requestId } = data;
     console.log(`🔧 Skill invoked: ${action}`, params);
     
-    // Handle different actions
     switch (action) {
       case 'chat':
         this.handleChatMessage({
@@ -192,17 +176,7 @@ class MasterClawChatSkill {
   }
 
   generateResponse(userMessage) {
-    // TODO: Integrate with actual OpenClaw agent
-    // This is a placeholder - replace with your agent's logic
-    
-    const responses = [
-      `I received: "${userMessage}"`,
-      `Processing your request: ${userMessage}`,
-      `OpenClaw agent responding to: ${userMessage}`,
-      `You said: "${userMessage}" - I'm an OpenClaw agent connected to MasterClawInterface!`
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
+    return `🤖 OpenClaw received: "${userMessage}"\n\nThis is a placeholder response. Connect your actual OpenClaw agent logic here.`;
   }
 
   sendResponse(text, conversationId) {
@@ -221,14 +195,13 @@ class MasterClawChatSkill {
     };
 
     this.socket.emit('chat:response', response, (ack) => {
-      if (ack?.success) {
-        console.log(`📤 Sent: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+      if (ack?.ok) {
+        console.log(`📤 Response sent`);
       } else {
         console.error('❌ Failed to send response:', ack?.error);
       }
     });
 
-    // Also store locally
     this.currentConversation.push({
       role: 'assistant',
       content: text,
@@ -237,7 +210,7 @@ class MasterClawChatSkill {
   }
 
   startCLI() {
-    console.log('🖥️  Starting CLI (type "/quit" to exit)');
+    console.log('🖥️  CLI Ready (commands: /quit, /status, /history, /send <msg>)');
     console.log('');
 
     this.rl = readline.createInterface({
@@ -263,19 +236,18 @@ class MasterClawChatSkill {
           conversationLength: this.currentConversation.length,
           agentName: config.agentName
         });
-      }
-
-      if (trimmed === '/history') {
+      } else if (trimmed === '/history') {
         console.log('\n--- Conversation History ---');
-        this.currentConversation.forEach((msg, i) => {
-          console.log(`${i + 1}. [${msg.role}] ${msg.content.substring(0, 80)}...`);
+        this.currentConversation.slice(-10).forEach((msg, i) => {
+          const preview = msg.content.substring(0, 60).replace(/\n/g, ' ');
+          console.log(`${i + 1}. [${msg.role}] ${preview}...`);
         });
         console.log('');
-      }
-
-      if (trimmed.startsWith('/send ')) {
+      } else if (trimmed.startsWith('/send ')) {
         const message = trimmed.substring(6);
         this.sendResponse(message, 'manual');
+      } else if (trimmed) {
+        console.log('Unknown command. Use: /quit, /status, /history, /send <msg>');
       }
 
       this.rl.prompt();
@@ -288,26 +260,17 @@ class MasterClawChatSkill {
 
   shutdown() {
     console.log('\n👋 Shutting down...');
-    
-    if (this.socket) {
-      this.socket.disconnect();
-    }
-    
-    if (this.rl) {
-      this.rl.close();
-    }
-    
+    if (this.socket) this.socket.disconnect();
+    if (this.rl) this.rl.close();
     process.exit(0);
   }
 }
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n👋 SIGINT received');
   process.exit(0);
 });
 
-// Start the skill
 const skill = new MasterClawChatSkill();
 skill.start().catch(err => {
   console.error('Failed to start skill:', err);
