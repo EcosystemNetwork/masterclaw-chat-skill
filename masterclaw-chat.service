@@ -1,0 +1,16 @@
+[Unit]
+Description=MasterClaw Chat Skill
+After=network.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/masterclaw-chat-skill
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+Environment="MASTERCLAW_URL=https://web-production-e0d96.up.railway.app"
+Environment="AGENT_NAME=OpenClaw Agent"
+
+[Install]
+WantedBy=multi-user.target

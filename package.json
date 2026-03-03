@@ -1,17 +1,39 @@
 {
-  "name": "masterclaw-chat",
+  "name": "masterclaw-chat-skill",
   "version": "1.0.0",
-  "description": "Connect OpenClaw to MasterClawInterface dashboard",
+  "description": "Connect OpenClaw agent to MasterClawInterface dashboard via Socket.IO",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "deploy": "./deploy.sh",
+    "deploy:pm2": "pm2 start index.js --name masterclaw-chat && pm2 save",
+    "deploy:docker": "docker-compose up -d --build",
+    "logs": "tail -f /tmp/masterclaw-chat.log",
+    "logs:pm2": "pm2 logs masterclaw-chat",
+    "logs:docker": "docker-compose logs -f",
+    "stop": "pkill -f 'node index.js' || true",
+    "stop:pm2": "pm2 delete masterclaw-chat || true",
+    "stop:docker": "docker-compose down"
   },
+  "keywords": [
+    "openclaw",
+    "masterclaw",
+    "chat",
+    "ai",
+    "agent"
+  ],
+  "author": "Rex Deus",
+  "license": "MIT",
   "dependencies": {
     "socket.io-client": "^4.8.3"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EcosystemNetwork/masterclaw-chat-skill.git"
   }
 }

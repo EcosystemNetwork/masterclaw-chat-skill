@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  masterclaw-chat:
+    build: .
+    container_name: masterclaw-chat
+    restart: always
+    environment:
+      - MASTERCLAW_URL=https://web-production-e0d96.up.railway.app
+      - AGENT_NAME=OpenClaw Agent
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

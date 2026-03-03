@@ -4,142 +4,150 @@ Connect any OpenClaw agent to MasterClawInterface dashboard via Socket.IO.
 
 ## Quick Start
 
-### 1. Start MasterClawInterface Backend
-
-On your Oracle LFG instance (147.224.9.9):
+### 1. Install Dependencies
 
 ```bash
-ssh opc@147.224.9.9
-cd ~/MasterClawInterface/backend
+npm install
+```
+
+### 2. Configure Environment
+
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+
+### 3. Start the Skill
+
+```bash
 npm start
 ```
 
-Backend runs on `http://147.224.9.9:3001`
-
-### 2. Deploy Frontend to Vercel
-
-The frontend needs to point to your Oracle backend:
-
+Or with environment variable:
 ```bash
-# On Oracle instance
-cd ~/MasterClawInterface/frontend
-echo 'NEXT_PUBLIC_GATEWAY_URL=http://147.224.9.9:3001' > .env.production.local
-npm run build
-
-# Deploy to Vercel (from your local machine)
-vercel --prod
+MASTERCLAW_URL=https://web-production-e0d96.up.railway.app npm start
 ```
 
-### 3. Start This Chat Skill
+## Configuration
 
-```bash
-# On Oracle instance
-ssh opc@147.224.9.9
-cd ~/masterclaw-chat-skill
-export MASTERCLAW_URL='http://localhost:3001'
-node index.js
+Create a `.env` file:
+
+```env
+MASTERCLAW_URL=https://web-production-e0d96.up.railway.app
+AGENT_NAME=OpenClaw Agent
 ```
 
-Or use the Railway backend (if preferred):
-```bash
-export MASTERCLAW_URL='wss://web-production-e0d96.up.railway.app'
-node index.js
-```
-
-### 4. Open Dashboard
-
-Go to: https://masterclaw-interface.vercel.app/dashboard
-
-Type a message in the chat box - it will route to your OpenClaw agent!
-
----
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MASTERCLAW_URL` | MasterClawInterface backend URL | `http://localhost:3001` |
+| `AGENT_NAME` | Display name for the agent | `OpenClaw Agent` |
 
 ## How It Works
 
 ```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  Vercel Frontend │──────▶│  Oracle Backend  │◀─────│  OpenClaw Agent │
-│  (React/Next.js) │      │  (Express/Socket)│      │  (This Skill)   │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
-        │                                                    │
-        │              Socket.IO 'chat:message'              │
-        │◀───────────────────────────────────────────────────│
-        │                                                    │
-        │              Socket.IO 'chat:response'             │
-        │───────────────────────────────────────────────────▶│
+┌─────────────────┐      Socket.IO       ┌──────────────────┐
+│  Vercel Frontend │◄───────────────────►│  Railway Backend  │
+│  (Dashboard)     │                     │  (Express API)    │
+└─────────────────┘                     └──────────────────┘
+                                                ▲
+                                                │ Socket.IO
+                                                │
+                                         ┌──────────────────┐
+│  Chat Skill      │
+│  (This Agent)    │
+└──────────────────┘
 ```
 
-1. User types message in Vercel dashboard
-2. Frontend sends to Oracle backend via Socket.IO
-3. Backend routes to registered 'chat' skill (this agent)
-4. Agent processes message and sends response
-5. Response appears in dashboard
+## Production Deployment
 
----
+### Using Systemd (Linux)
 
-## Configuration
+1. Copy the service file:
+```bash
+sudo cp masterclaw-chat.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
 
-### Environment Variables
+2. Edit the service file with your paths:
+```bash
+sudo nano /etc/systemd/system/masterclaw-chat.service
+```
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MASTERCLAW_URL` | Backend URL | `wss://web-production-e0d96.up.railway.app` |
-| `MASTERCLAW_FALLBACK_URL` | Fallback backend | `ws://147.224.9.9:3001` |
-| `AGENT_NAME` | Display name | `OpenClaw Agent` |
-| `AGENT_ID` | Unique ID | Auto-generated |
+3. Enable and start:
+```bash
+sudo systemctl enable masterclaw-chat
+sudo systemctl start masterclaw-chat
+sudo systemctl status masterclaw-chat
+```
 
-### Integrating Your OpenClaw Agent
+### Using PM2
 
-Replace the `generateResponse()` method in `index.js` with your actual OpenClaw logic:
+```bash
+npm install -g pm2
+pm2 start index.js --name masterclaw-chat
+pm2 save
+pm2 startup
+```
+
+### Using Docker
+
+```bash
+docker build -t masterclaw-chat .
+docker run -d \
+  -e MASTERCLAW_URL=https://web-production-e0d96.up.railway.app \
+  --name masterclaw-chat \
+  masterclaw-chat
+```
+
+## Customizing Responses
+
+Edit the `chat:message` handler in `index.js`:
 
 ```javascript
-generateResponse(userMessage) {
-  // TODO: Replace with your OpenClaw agent integration
-  // Example:
-  // const response = await openclawAgent.chat(userMessage);
-  // return response;
+socket.on('chat:message', (data) => {
+  const { message, conversationId, timestamp } = data;
   
-  return `OpenClaw received: ${userMessage}`;
-}
+  // TODO: Replace with your OpenClaw integration
+  // Example:
+  // const response = await openclawAgent.chat(message);
+  
+  const response = {
+    type: 'assistant',
+    content: `🤖 OpenClaw received: "${message}"`,
+    agent: config.agentName,
+    conversationId,
+    timestamp: Date.now()
+  };
+  
+  socket.emit('chat:response', response);
+});
 ```
-
----
 
 ## Troubleshooting
 
 ### "No agent connected" in dashboard
-- Check skill is running: `ps aux | grep masterclaw-chat`
-- Verify backend is running: `curl http://147.224.9.9:3001/health`
-- Check skill logs: `tail -f /tmp/masterclaw-chat.log`
+- Check skill is running: `ps aux | grep 'node index.js'`
+- Verify backend URL is correct
+- Check logs: `tail -f /tmp/chat-skill.log`
 
-### CORS errors
-- Backend CORS is pre-configured for Vercel domains
-- Add your domain to `backend/src/index.js` ALLOWED_ORIGINS if needed
+### Connection refused
+- Ensure MasterClawInterface backend is running
+- Check firewall rules
+- Verify URL format (http/https, not ws/wss)
 
-### Connection timeout
-- Use `http://localhost:3001` when running skill on same server as backend
-- Use `http://147.224.9.9:3001` when running skill remotely
-
----
-
-## Architecture
-
-This skill implements the **Federated Skill Pattern**:
-- Registers as a 'chat' skill provider via Socket.IO
-- Receives messages from MasterClawInterface backend
-- Processes via OpenClaw agent
-- Returns responses to dashboard
-
-No API tokens or credentials stored - agents connect inbound.
-
----
+### Skill not registering
+- Check backend logs for errors
+- Ensure `skill:register` event is being sent
+- Verify skill object has required fields
 
 ## Files
 
 - `index.js` - Main skill implementation
 - `skill.json` - Skill metadata
 - `package.json` - Dependencies
+- `masterclaw-chat.service` - Systemd service file
+- `Dockerfile` - Docker build configuration
 
----
+## License
 
-Built for Rex Deus by Deciple1 🜁
+MIT
