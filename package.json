@@ -1,0 +1,17 @@
+{
+  "name": "masterclaw-chat",
+  "version": "1.0.0",
+  "description": "Connect OpenClaw to MasterClawInterface dashboard",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

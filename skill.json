@@ -1,0 +1,15 @@
+{
+  "name": "masterclaw-chat",
+  "version": "1.0.0",
+  "description": "Connect OpenClaw to MasterClawInterface dashboard via Socket.IO",
+  "runtime": "node",
+  "entry": "index.js",
+  "triggers": ["chat"],
+  "config": {
+    "masterclawUrl": "wss://web-production-e0d96.up.railway.app",
+    "fallbackUrl": "ws://147.224.9.9:3001",
+    "agentName": "OpenClaw Agent",
+    "autoReconnect": true,
+    "reconnectInterval": 5000
+  }
+}
