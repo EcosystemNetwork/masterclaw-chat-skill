@@ -1,278 +1,81 @@
 #!/usr/bin/env node
-/**
- * MasterClaw Chat Skill
- * Connects OpenClaw agent to MasterClawInterface dashboard
- */
-
 import { io } from 'socket.io-client';
-import readline from 'readline';
 
 const config = {
   masterclawUrl: process.env.MASTERCLAW_URL || 'http://localhost:3001',
-  agentName: process.env.AGENT_NAME || 'OpenClaw Agent',
-  agentId: process.env.AGENT_ID || `oc-${Date.now()}`,
-  autoReconnect: true,
-  reconnectInterval: 5000,
-  maxReconnectAttempts: 10
+  agentName: process.env.AGENT_NAME || 'OpenClaw Agent'
 };
 
-class MasterClawChatSkill {
-  constructor() {
-    this.socket = null;
-    this.isConnected = false;
-    this.reconnectAttempts = 0;
-    this.currentConversation = [];
-    this.rl = null;
-  }
+console.log('🦞 MasterClaw Chat Skill Starting...');
+console.log(`Agent: ${config.agentName}`);
+console.log(`Target: ${config.masterclawUrl}\n`);
 
-  async start() {
-    console.log('🦞 MasterClaw Chat Skill Starting...');
-    console.log(`Agent: ${config.agentName} (${config.agentId})`);
-    console.log(`Target: ${config.masterclawUrl}`);
-    console.log('');
+let socketUrl = config.masterclawUrl;
+if (socketUrl.startsWith('ws://')) socketUrl = socketUrl.replace('ws://', 'http://');
+if (socketUrl.startsWith('wss://')) socketUrl = socketUrl.replace('wss://', 'https://');
 
-    await this.connect(config.masterclawUrl);
-
-    if (!this.isConnected) {
-      console.error('❌ Could not connect to MasterClawInterface');
-      process.exit(1);
-    }
-
-    this.startCLI();
-  }
-
-  connect(url) {
-    return new Promise((resolve) => {
-      console.log(`🔗 Connecting to ${url}...`);
-
-      let socketUrl = url;
-      if (url.startsWith('ws://')) {
-        socketUrl = url.replace('ws://', 'http://');
-      } else if (url.startsWith('wss://')) {
-        socketUrl = url.replace('wss://', 'https://');
-      }
-
-      this.socket = io(socketUrl, {
-        transports: ['websocket', 'polling'],
-        path: '/socket.io',
-        reconnection: config.autoReconnect,
-        reconnectionAttempts: config.maxReconnectAttempts,
-        reconnectionDelay: config.reconnectInterval,
-        withCredentials: true,
-        auth: {
-          agentId: config.agentId,
-          agentName: config.agentName
-        }
-      });
-
-      this.socket.on('connect', () => {
-        console.log('✅ Connected to MasterClawInterface');
-        console.log(`Socket ID: ${this.socket.id}`);
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        this.registerSkill();
-        resolve(true);
-      });
-
-      this.socket.on('connect_error', (err) => {
-        console.log(`❌ Connection error: ${err.message}`);
-        this.reconnectAttempts++;
-        if (this.reconnectAttempts >= 3) {
-          resolve(false);
-        }
-      });
-
-      this.socket.on('disconnect', (reason) => {
-        console.log(`🔌 Disconnected: ${reason}`);
-        this.isConnected = false;
-      });
-
-      this.socket.on('chat:message', (data) => {
-        this.handleChatMessage(data);
-      });
-
-      this.socket.on('skill:invoke', (data) => {
-        this.handleSkillInvoke(data);
-      });
-
-      setTimeout(() => {
-        if (!this.isConnected) {
-          resolve(false);
-        }
-      }, 10000);
-    });
-  }
-
-  registerSkill() {
-    const skill = {
-      name: config.agentName,
-      description: 'OpenClaw AI agent for chat conversations',
-      trigger: 'chat',
-      parameters: [
-        { name: 'message', type: 'string', required: true, description: 'User message' }
-      ],
-      socketId: this.socket.id
-    };
-
-    console.log('📡 Registering skill:', skill.name);
-    
-    this.socket.emit('skill:register', skill, (response) => {
-      if (response?.ok) {
-        console.log('✅ Skill registered successfully!');
-        console.log('💬 Ready to receive messages from dashboard');
-        console.log('');
-      } else {
-        console.error('❌ Skill registration failed:', response?.error || 'Unknown error');
-        setTimeout(() => this.registerSkill(), 5000);
-      }
-    });
-  }
-
-  handleChatMessage(data) {
-    const { message, userId, conversationId, timestamp } = data;
-    
-    console.log(`\n📨 [${new Date(timestamp).toLocaleTimeString()}] User: ${message}`);
-    
-    this.currentConversation.push({
-      role: 'user',
-      content: message,
-      timestamp
-    });
-
-    const response = this.generateResponse(message);
-    this.sendResponse(response, conversationId);
-  }
-
-  handleSkillInvoke(data) {
-    const { skill, action, params, requestId } = data;
-    console.log(`🔧 Skill invoked: ${action}`, params);
-    
-    switch (action) {
-      case 'chat':
-        this.handleChatMessage({
-          message: params.message,
-          userId: params.userId,
-          conversationId: params.conversationId,
-          timestamp: Date.now()
-        });
-        break;
-      
-      case 'status':
-        this.socket.emit('skill:response', {
-          requestId,
-          status: 'active',
-          agent: config.agentName,
-          connected: this.isConnected,
-          conversationLength: this.currentConversation.length
-        });
-        break;
-      
-      default:
-        this.socket.emit('skill:response', {
-          requestId,
-          error: `Unknown action: ${action}`
-        });
-    }
-  }
-
-  generateResponse(userMessage) {
-    return `🤖 OpenClaw received: "${userMessage}"\n\nThis is a placeholder response. Connect your actual OpenClaw agent logic here.`;
-  }
-
-  sendResponse(text, conversationId) {
-    if (!this.isConnected) {
-      console.error('❌ Cannot send response: not connected');
-      return;
-    }
-
-    const response = {
-      type: 'assistant',
-      content: text,
-      agent: config.agentName,
-      agentId: config.agentId,
-      conversationId,
-      timestamp: Date.now()
-    };
-
-    this.socket.emit('chat:response', response, (ack) => {
-      if (ack?.ok) {
-        console.log(`📤 Response sent`);
-      } else {
-        console.error('❌ Failed to send response:', ack?.error);
-      }
-    });
-
-    this.currentConversation.push({
-      role: 'assistant',
-      content: text,
-      timestamp: Date.now()
-    });
-  }
-
-  startCLI() {
-    console.log('🖥️  CLI Ready (commands: /quit, /status, /history, /send <msg>)');
-    console.log('');
-
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: 'Agent > '
-    });
-
-    this.rl.prompt();
-
-    this.rl.on('line', (line) => {
-      const trimmed = line.trim();
-      
-      if (trimmed === '/quit') {
-        this.shutdown();
-        return;
-      }
-
-      if (trimmed === '/status') {
-        console.log({
-          connected: this.isConnected,
-          socketId: this.socket?.id,
-          conversationLength: this.currentConversation.length,
-          agentName: config.agentName
-        });
-      } else if (trimmed === '/history') {
-        console.log('\n--- Conversation History ---');
-        this.currentConversation.slice(-10).forEach((msg, i) => {
-          const preview = msg.content.substring(0, 60).replace(/\n/g, ' ');
-          console.log(`${i + 1}. [${msg.role}] ${preview}...`);
-        });
-        console.log('');
-      } else if (trimmed.startsWith('/send ')) {
-        const message = trimmed.substring(6);
-        this.sendResponse(message, 'manual');
-      } else if (trimmed) {
-        console.log('Unknown command. Use: /quit, /status, /history, /send <msg>');
-      }
-
-      this.rl.prompt();
-    });
-
-    this.rl.on('close', () => {
-      this.shutdown();
-    });
-  }
-
-  shutdown() {
-    console.log('\n👋 Shutting down...');
-    if (this.socket) this.socket.disconnect();
-    if (this.rl) this.rl.close();
-    process.exit(0);
-  }
-}
-
-process.on('SIGINT', () => {
-  console.log('\n👋 SIGINT received');
-  process.exit(0);
+const socket = io(socketUrl, {
+  transports: ['websocket', 'polling'],
+  path: '/socket.io',
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 5000,
+  withCredentials: true
 });
 
-const skill = new MasterClawChatSkill();
-skill.start().catch(err => {
-  console.error('Failed to start skill:', err);
-  process.exit(1);
+socket.on('connect', () => {
+  console.log('✅ Connected! Socket ID:', socket.id);
+  
+  // Register skill
+  const skill = {
+    name: config.agentName,
+    description: 'OpenClaw AI agent for chat',
+    trigger: 'chat',
+    parameters: [{ name: 'message', type: 'string', required: true }],
+    socketId: socket.id
+  };
+  
+  console.log('📡 Registering skill...');
+  socket.emit('skill:register', skill);
+  console.log('✅ Skill registration sent');
+  console.log('💬 Ready for messages!');
+  console.log('Press Ctrl+C to exit\n');
 });
+
+socket.on('skill:registered', (skill) => {
+  console.log('✅ Confirmed: Skill registered as', skill.trigger);
+});
+
+socket.on('chat:message', (data) => {
+  const { message, conversationId, timestamp } = data;
+  console.log(`\n📨 [${new Date(timestamp).toLocaleTimeString()}] User: ${message}`);
+  
+  // Simple echo response
+  const response = {
+    type: 'assistant',
+    content: `🤖 OpenClaw received: "${message}"`,
+    agent: config.agentName,
+    conversationId,
+    timestamp: Date.now()
+  };
+  
+  socket.emit('chat:response', response);
+  console.log('📤 Response sent');
+});
+
+socket.on('connect_error', (err) => {
+  console.log('❌ Connection error:', err.message);
+});
+
+socket.on('disconnect', (reason) => {
+  console.log('🔌 Disconnected:', reason);
+});
+
+// Keep alive
+setInterval(() => {
+  if (socket.connected) {
+    socket.emit('ping');
+  }
+}, 30000);
+
+console.log('🔗 Connecting...');
